@@ -16,6 +16,19 @@ function Field({ label, value, onChange, placeholder }) {
   )
 }
 
+function Badge({ children, tone = 'slate' }) {
+  const tones = {
+    slate: 'bg-slate-700/50 text-slate-200 border-slate-500/30',
+    green: 'bg-emerald-700/40 text-emerald-100 border-emerald-500/30',
+    amber: 'bg-amber-700/40 text-amber-100 border-amber-500/30',
+    red: 'bg-red-700/40 text-red-100 border-red-500/30',
+    blue: 'bg-blue-700/40 text-blue-100 border-blue-500/30',
+  }
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded border text-xs ${tones[tone]}`}>{children}</span>
+  )
+}
+
 function App() {
   const [prompt, setPrompt] = useState('Ultra-realistic portrait photo of a person')
   const [age, setAge] = useState('25')
@@ -29,9 +42,13 @@ function App() {
   const [loadingGenerate, setLoadingGenerate] = useState(false)
   const [history, setHistory] = useState([])
   const [error, setError] = useState('')
+  const [source, setSource] = useState('')
+  const [seed, setSeed] = useState(null)
+  const [serverError, setServerError] = useState('')
 
   const enhancePrompt = async () => {
     setError('')
+    setServerError('')
     setLoadingEnhance(true)
     try {
       const res = await fetch(`${API_BASE}/api/enhance`, {
@@ -51,6 +68,7 @@ function App() {
 
   const generateImage = async () => {
     setError('')
+    setServerError('')
     setLoadingGenerate(true)
     try {
       const payload = { prompt, age, skin_tone: skin, eye_color: eyes, nationality, enhanced_prompt: enhanced || undefined }
@@ -63,13 +81,18 @@ function App() {
       const data = await res.json()
       setEnhanced(data.enhanced_prompt)
       setImageUrl(data.image_url)
-      setHistory((h) => [{ image_url: data.image_url, enhanced_prompt: data.enhanced_prompt, id: data.id }, ...h].slice(0, 6))
+      setSource(data.source || '')
+      setSeed(data.seed || null)
+      setServerError(data.error || '')
+      setHistory((h) => [{ image_url: data.image_url, enhanced_prompt: data.enhanced_prompt, id: data.id, source: data.source, seed: data.seed }, ...h].slice(0, 6))
     } catch (e) {
       setError(e.message)
     } finally {
       setLoadingGenerate(false)
     }
   }
+
+  const showFallbackHint = source === 'fallback'
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white">
@@ -111,19 +134,33 @@ function App() {
                 <div className="bg-black/30 p-3 rounded-md border border-white/10">{enhanced}</div>
               </div>
             )}
-            {error && (
-              <div className="mt-3 text-red-300 text-sm">{error}</div>
+            {(error || serverError) && (
+              <div className="mt-3 text-red-300 text-sm space-y-1">
+                {error && <div>{error}</div>}
+                {serverError && <div>Generator note: {serverError}</div>}
+              </div>
             )}
           </div>
 
-          <div className="bg-white/5 backdrop-blur rounded-xl p-4 border border-white/10 min-h-[420px] flex items-center justify-center">
-            {imageUrl ? (
-              <img src={imageUrl} alt="Generated" className="max-h-[420px] rounded-lg shadow-lg" />)
-              : (
-              <div className="text-white/50 text-center">
-                Your generated image will appear here.
+          <div className="bg-white/5 backdrop-blur rounded-xl p-4 border border-white/10 min-h-[420px]">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                {source && <Badge tone={source === 'stability' ? 'green' : 'amber'}>{source === 'stability' ? 'Stability AI' : 'Placeholder'}</Badge>}
+                {seed != null && <Badge tone="blue">seed: {seed}</Badge>}
               </div>
-            )}
+              {showFallbackHint && (
+                <div className="text-xs text-white/60">Add STABILITY_API_KEY to use the real model</div>
+              )}
+            </div>
+            <div className="min-h-[380px] flex items-center justify-center">
+              {imageUrl ? (
+                <img src={imageUrl} alt="Generated" className="max-h-[380px] rounded-lg shadow-lg" />)
+                : (
+                <div className="text-white/50 text-center">
+                  Your generated image will appear here.
+                </div>
+              )}
+            </div>
           </div>
         </section>
 
@@ -135,9 +172,15 @@ function App() {
                 <div className="text-sm text-white/60">No generations yet.</div>
               )}
               {history.map((h) => (
-                <div key={h.image_url} className="flex gap-3 items-center">
+                <div key={h.image_url + (h.seed || '')} className="flex gap-3 items-center">
                   <img src={h.image_url} alt="thumb" className="w-16 h-16 object-cover rounded" />
-                  <div className="text-xs text-white/80 line-clamp-3">{h.enhanced_prompt}</div>
+                  <div className="text-xs text-white/80 line-clamp-3">
+                    <div className="mb-1">{h.enhanced_prompt}</div>
+                    <div className="flex items-center gap-2">
+                      {h.source && <Badge tone={h.source === 'stability' ? 'green' : 'amber'}>{h.source}</Badge>}
+                      {h.seed != null && <Badge tone="blue">seed: {h.seed}</Badge>}
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
